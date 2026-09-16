@@ -1,0 +1,21 @@
+node_modules/
+.wrangler/
+dist/
+build/
+worker/
+package-lock.json
+pnpm-lock.yaml
+
+# Local env and configs
+.dev.vars
+.env
+.env.*
+wrangler.jsonc.bak
+
+# Backups e Artefatos Locais
+*.bak
+*.custom_domain_bkp
+*.log
+*:Zone.Identifier
+*.tsbuildinfo
+*.d.ts

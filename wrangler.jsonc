@@ -1,0 +1,24 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "2312312312312",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-07-25",
+  "observability": {
+    "enabled": true
+  },
+  "vars": {
+    "ONE_MIN_CHAT_API_URL": "https://api.1min.ai/api/chat-with-ai",
+    "ONE_MIN_API_URL": "https://api.1min.ai/api/features",
+    "ONE_MIN_ASSET_URL": "https://api.1min.ai/api/assets",
+    "ONE_MIN_MODELS_API_URL": "https://api.1min.ai/models",
+    "AUTH_TOKEN": "9488u1LaOWWyRjzi2gdAxy4G"
+  },
+  "kv_namespaces": [
+    {
+      "binding": "RATE_LIMIT_STORE","id": "a2125acc218b4c12b185c22638a58c1f"
+    },
+    {
+      "binding": "MODEL_CACHE","id": "581f94d49414470c8bb3648ee16ddcbb"
+    }
+  ]
+}
