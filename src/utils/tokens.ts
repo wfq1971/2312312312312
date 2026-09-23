@@ -2,7 +2,7 @@
  * Token calculation utility
  */
 
-import { encode } from "gpt-tokenizer";
+import {  ALL_SPECIAL_TOKENS, encode } from "gpt-tokenizer";
 import type {
   AnthropicMessageRequest,
   ChatCompletionRequest,
@@ -13,9 +13,25 @@ import { extractAllMessageText } from "./message-processing";
 
 const CHAR_TO_TOKEN_RATIO = 4;
 
+/**
+ * User prompts are untrusted text and may legitimately contain strings that
+ * look like OpenAI special tokens (`<|endoftext|>`, `<|im_start|>`, `<|fim_*|>`,
+ * ...). Those are common when a chat/tool template leaks into the prompt, or
+ * when the user asks the model to talk about tokenizers.
+ *
+ * `encode()` throws `Disallowed special token found: ...` on any of them by
+ * default, which used to bubble up as an "Token calculation failed" error log on
+ * every such request. We are only counting tokens of arbitrary text here, not
+ * building a chat prompt, so special tokens must be treated as ordinary text.
+ */
+const PERMISSIVE_ENCODE_OPTIONS = {
+  allowedSpecial: ALL_SPECIAL_TOKENS,
+} as const;
+
 export function calculateTokens(text: string, _model?: string): number {
+    if (!text) return 0;
   try {
-    return encode(text).length;
+    return encode(text, PERMISSIVE_ENCODE_OPTIONS).length;
   } catch (error) {
     console.error("Token calculation failed:", error);
     return estimateTokenCount(text);
