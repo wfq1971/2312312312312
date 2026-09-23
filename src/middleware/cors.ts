@@ -3,7 +3,7 @@ import { createMiddleware } from "hono/factory";
 
 const baseCors = cors({
   origin: "*",
-  allowMethods: ["GET", "POST", "OPTIONS"],
+  allowMethods: ["GET", "POST", "HEAD", "OPTIONS"],
   allowHeaders: [
     "Content-Type",
     "Authorization",
