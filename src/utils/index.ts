@@ -15,3 +15,4 @@ export * from "./streaming";
 export * from "./tokens";
 export * from "./tool-emulator";
 export * from "./utf8-decoder";
+export * from "./prompt-compaction";
