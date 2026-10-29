@@ -24,10 +24,25 @@ const URL_PLACEHOLDERS: Array<[RegExp, string]> = [
   [/^https?:\/\/localhost[^\s"')]*$/i, "[URL local]"],
 ];
 
-const URL_PATTERN = /https?:\/\/[^\s"'<>()]+/gi;
+/**
+ * Só `http(s)://` — incluindo o caso em que o cliente serializou a URL dentro de
+ * markdown (`[texto](https://…)`) ou de autolink (`<https://…>`), que é como
+ * mensagens de ferramenta costumam citar schema/docs. Os delimitadores de
+ * markdown e HTML são tratados em `URL_WRAPPER_PATTERN`.
+ */
+const URL_PATTERN = /https?:\/\/[^\s"'<>()[\]]+/g;
+
+const URL_WRAPPER_PATTERN = /\[\]\(\s*(https?:\/\/[^\s"'<>()[\]]+)\s*\)/g;
+
+/**
+ * Pontuação que costuma grudar na URL (fim de frase, vírgula, `;`) e não faz
+ * parte do endereço. Fica fora do match para não poluir o placeholder.
+ */
+const URL_TRAILING_PUNCTUATION = /[.,;:!?]+$/;
 
 function compactUrl(rawUrl: string): string {
-  const withoutHash = rawUrl.replace(/[.,;:!?]+$/, "");
+  const withoutHash = rawUrl.replace(URL_TRAILING_PUNCTUATION, "");
+  const trailing = rawUrl.slice(withoutHash.length);
 
   for (const [pattern, placeholder] of URL_PLACEHOLDERS) {
     if (pattern.test(withoutHash)) return placeholder;
@@ -38,15 +53,26 @@ function compactUrl(rawUrl: string): string {
     const lastSegment = parsed.pathname.split("/").filter(Boolean).pop();
     const tail = lastSegment ? `…/${lastSegment}` : "";
     // Sem "://" o upstream não reconhece como URL e não tenta crawlear.
-    return `[link: ${parsed.host}${tail}]`;
+    return `[link: ${parsed.host}${tail}]${trailing}`;
   } catch {
     return "[link]";
   }
 }
 
+/**
+ * Neutraliza URLs http(s) em qualquer texto que vá virar prompt upstream.
+ *
+ * Aplicado no resultado final da montagem do prompt (não só em blocos de
+ * ferramenta): o 1min.ai reage a URL em *qualquer* lugar do request, então
+ * restringir a limpeza a `role: "tool"` deixava passar URLs que o cliente
+ * citava em mensagens `user`/`assistant` — e o upstream voltava a responder
+ * com `🌐 Crawling site …`.
+ */
 export function neutralizeUrls(text: string): string {
   if (!text || typeof text !== "string") return "";
-  return text.replace(URL_PATTERN, (match) => compactUrl(match));
+  return text
+    .replace(URL_WRAPPER_PATTERN, (_match, url: string) => compactUrl(url))
+    .replace(URL_PATTERN, (match) => compactUrl(match));
 }
 
 /**
