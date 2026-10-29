@@ -27,7 +27,7 @@ import {
 import { executeStreamingPipeline } from "../utils/streaming";
 import { calculateTokens, estimateInputTokens } from "../utils/tokens";
 import { BaseTextHandler } from "./base";
-
+import { looksLikeCrawlLeak } from "../utils/upstream-fetch";
 export class ChatHandler extends BaseTextHandler {
   async handleChatCompletionsWithBody(
     requestBody: ChatCompletionRequest,
@@ -215,6 +215,12 @@ export class ChatHandler extends BaseTextHandler {
     tools?: ToolDefinition[],
   ): ChatCompletionResponse {
     const rawContent = extractOneMinContent(data);
+    if (looksLikeCrawlLeak(rawContent)) {
+      console.warn(
+        "Upstream returned a crawl trace instead of an answer:",
+        rawContent.slice(0, 200),
+      );
+    }
     const toolCalls = tools
       ? ToolCallingEmulator.parseResponse(rawContent, tools)
       : null;
