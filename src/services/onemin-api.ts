@@ -15,7 +15,12 @@ import { ApiError } from "../utils/errors";
 import { processImageUrl, uploadImageToAsset } from "../utils/image";
 import { extractTextFromMessageContent } from "../utils/message-processing";
 import type { WebSearchConfig } from "../utils/model-parser";
+import { neutralizeUrls } from "../utils/prompt-compaction";
 import { ResponseSanitizer } from "../utils/sanitizer";
+import {
+  describeUpstreamError,
+  formatUpstreamBlockMessage,
+} from "../utils/upstream-fetch";
 import { isVisionModel } from "./model-registry";
 
 /**
@@ -25,7 +30,17 @@ import { isVisionModel } from "./model-registry";
 function formatMessageItem(msg: Message): string {
   // 1. Mensagens com role "tool" ou "function" (Retorno de busca/memória)
   if (msg.role === "tool" || msg.role === "function") {
-    const cleanContent = ResponseSanitizer.unpackMemoryContent(msg.content);
+    // neutralized: URLs em retorno de ferramenta fazem o upstream crawlear a
+    // página em vez de usar o texto que já veio pronto.
+    const cleanContent = neutralizeUrls(
+      ResponseSanitizer.unpackMemoryContent(msg.content),
+    );
+    // Mantém o tool_call_id: sem ele o modelo não consegue correlacionar
+    // resultados quando um turno devolve vários tool_calls.
+    const callId = (msg as { tool_call_id?: unknown }).tool_call_id;
+    if (typeof callId === "string" && callId) {
+      return `[Resultado de ${callId}]:\n${cleanContent}`;
+    }
     return `[Contexto do Sistema - Informação Recuperada]:\n${cleanContent}`;
   }
 
@@ -41,7 +56,7 @@ function formatMessageItem(msg: Message): string {
         const fnArgs = c.function?.arguments ?? "{}";
         const argsStr =
           typeof fnArgs === "string" ? fnArgs : JSON.stringify(fnArgs);
-        return `${fnName}(${argsStr})`;
+        return `${fnName}(${neutralizeUrls(argsStr)})`;
       })
       .join(", ");
     return `[Assistente consultou: ${callsStr}]`;
@@ -69,14 +84,19 @@ function formatMessageItem(msg: Message): string {
         }>
       )
         .map((block) => {
-          if (block.type === "text") return block.text || "";
+          if (block.type === "text") return neutralizeUrls(block.text || "");
           if (block.type === "tool_use") {
-            return `[Assistente consultou: ${block.name || "ferramenta"}(${JSON.stringify(block.input || {})})]`;
+            const input = neutralizeUrls(JSON.stringify(block.input || {}));
+            return `[Assistente consultou: ${block.name || "ferramenta"}(${input})]`;
           }
           if (block.type === "tool_result") {
-            const cleanContent = ResponseSanitizer.unpackMemoryContent(
-              block.content,
+            const cleanContent = neutralizeUrls(
+              ResponseSanitizer.unpackMemoryContent(block.content),
             );
+            const blockId = (block as { tool_use_id?: unknown }).tool_use_id;
+            if (typeof blockId === "string" && blockId) {
+              return `[Resultado de ${blockId}]:\n${cleanContent}`;
+            }
             return `[Contexto do Sistema - Informação Recuperada]:\n${cleanContent}`;
           }
           return "";
@@ -157,11 +177,18 @@ export class OneMinApiService {
       if (!response.ok) {
         const rawErrorBody = await response.text().catch(() => "(unreadable)");
         const errorBody = rawErrorBody.slice(0, 500);
+        const upstream = describeUpstreamError(response, rawErrorBody);
+        const message = upstream.blocked
+          ? formatUpstreamBlockMessage(upstream, apiUrl)
+          : rawErrorBody;
+
         console.error(
           `1min.ai API error: ${response.status} ${response.statusText}`,
           {
             url: apiUrl,
             model: requestBody.model,
+            blockedByEdge: upstream.blocked,
+            rayId: upstream.rayId,
             errorBody,
           },
         );
@@ -189,7 +216,7 @@ export class OneMinApiService {
           }
         }
 
-        throw new ApiError(rawErrorBody, response.status);
+        throw new ApiError(message, response.status);
       }
 
       return response;
@@ -241,9 +268,17 @@ export class OneMinApiService {
 
     if (!response.ok) {
       const rawErrorBody = await response.text().catch(() => "(unreadable)");
-      const errorBody = rawErrorBody.slice(0, 500);
-      console.error("1min.ai image API error:", errorBody);
-      throw new ApiError(rawErrorBody, response.status);
+      const upstream = describeUpstreamError(response, rawErrorBody);
+      console.error("1min.ai image API error:", rawErrorBody.slice(0, 500), {
+        blockedByEdge: upstream.blocked,
+        rayId: upstream.rayId,
+      });
+      throw new ApiError(
+        upstream.blocked
+          ? formatUpstreamBlockMessage(upstream, this.env.ONE_MIN_API_URL)
+          : rawErrorBody,
+        response.status,
+      );
     }
 
     const data = await response.json();
@@ -435,8 +470,17 @@ export class OneMinApiService {
 
     if (!response.ok) {
       const rawErrorBody = await response.text().catch(() => "(unreadable)");
-      console.error("1min.ai audio API error:", rawErrorBody.slice(0, 500));
-      throw new ApiError(rawErrorBody, response.status);
+      const upstream = describeUpstreamError(response, rawErrorBody);
+      console.error("1min.ai audio API error:", rawErrorBody.slice(0, 500), {
+        blockedByEdge: upstream.blocked,
+        rayId: upstream.rayId,
+      });
+      throw new ApiError(
+        upstream.blocked
+          ? formatUpstreamBlockMessage(upstream, this.env.ONE_MIN_API_URL)
+          : rawErrorBody,
+        response.status,
+      );
     }
 
     return (await response.json()) as OneMinChatResponse;
