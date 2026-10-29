@@ -324,7 +324,13 @@ export class OneMinApiService {
       }
     }
 
-    const formattedHistory = formatConversationHistory(messages, "");
+        // Última barreira antes do upstream: o 1min.ai decide crawlear por URL em
+    // *qualquer* parte do prompt (inclusive `Human:`/`Assistant:` escritos pelo
+    // usuário), então a neutralização é aplicada no texto final, não só nos
+    // blocos de ferramenta de `formatMessageItem`.
+    const formattedHistory = neutralizeUrls(
+      formatConversationHistory(messages, ""),
+    );
 
     const promptObject: OneMinPromptObject = {
       prompt: formattedHistory,
